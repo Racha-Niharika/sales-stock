@@ -1,30 +1,35 @@
 using { API_SALES_ORDER_SRV as external } from './external/API_SALES_ORDER_SRV';
 using {API_MATERIAL_STOCK_SRV as materialapi} from './external/API_MATERIAL_STOCK_SRV';
+using {API_MATERIAL_DOCUMENT_SRV_0001 as materialdocapi} from './external/API_MATERIAL_DOCUMENT_SRV_0001';
+
 service salessrv{
-   action label(
-      name: String(80) @Common.Label: 'name',
-      amount: String(80) @Common.Label: 'amount'
-   ) returns String;
-entity A_SalesOrderItem as projection on external.A_SalesOrderItem actions{
+    action material(material: String,plant: String,quantity: String,SDDocument: String ) returns String;
+  entity SalesOrder as projection on external.A_SalesOrder{
+        key SalesOrder,
+        to_Item,
+         SoldToParty,
+        null as PurchaseOrderByCustomer:String(100),
+        key null as SalesOrderItem:String(100),
+        null as Material:String(100)
+        
+    }
+    actions{
     
 
       action label(
            
-            // Forms: String(80) @Common.Label: 'Forms' @Common.ValueList: {
-            //   CollectionPath: 'Forms', 
-            //   Label: 'Label',
-            //   Parameters: [
-            //     {
-            //       $Type: 'Common.ValueListParameterInOut',
-            //       LocalDataProperty: 'Forms',  
-            //       ValueListProperty: 'FormName'    
-            //     }
-            //   ]
-            // }
+          
             ) returns String;
-  
-  };
-  
+    }
+
+entity A_SalesOrderItem as projection on external.A_SalesOrderItem{
+        SalesOrder,
+        SalesOrderItem,
+        Material,
+
+    };
+
+            
   entity MaterialDetail as projection on materialapi.A_MatlStkInAcctMod{
         key Material,
         Plant,
@@ -32,9 +37,19 @@ entity A_SalesOrderItem as projection on external.A_SalesOrderItem actions{
         Batch,
         MatlWrhsStkQtyInMatlBaseUnit
     }
-}
 
-annotate salessrv.A_SalesOrderItem with @(
+    entity A_MaterialDocumentHeader as projection on materialdocapi.A_MaterialDocumentHeader{
+        key DocumentDate,
+        key PostingDate,
+        key GoodsMovementCode,
+        to_MaterialDocumentItem,
+    }
+  };
+  
+  
+//annotate salessrv.SalesOrder with @odata.draft.enabled;
+
+annotate salessrv.SalesOrder with @(
     UI.LineItem:[
         {
             $Type:'UI.DataField',
@@ -43,13 +58,25 @@ annotate salessrv.A_SalesOrderItem with @(
         {
             $Type:'UI.DataField',
             Value: SalesOrderItem
+        },
+        {
+            $Type:'UI.DataField',
+            Value: Material
+        },
+        {
+            $Type:'UI.DataField',
+            Value: PurchaseOrderByCustomer
+        },
+        {
+            $Type:'UI.DataField',
+            Value: SoldToParty
         }
     ]
 );
 //annotate Product with @odata.draft.enabled;
 
-annotate salessrv.A_SalesOrderItem with @(
-    UI.SelectionFields: [ SalesOrder , SalesOrderItem],  
+annotate salessrv.SalesOrder with @(
+    UI.SelectionFields: [ SalesOrder , SalesOrderItem,PurchaseOrderByCustomer,SoldToParty],  
     UI.FieldGroup #GeneratedGroup1 : {
         $Type : 'UI.FieldGroupType',
         Data : [
@@ -60,6 +87,18 @@ annotate salessrv.A_SalesOrderItem with @(
         {
             $Type:'UI.DataField',
             Value: SalesOrderItem
+        },
+        {
+            $Type:'UI.DataField',
+            Value: Material
+        },
+        {
+            $Type:'UI.DataField',
+            Value: PurchaseOrderByCustomer
+        },
+        {
+            $Type:'UI.DataField',
+            Value: SoldToParty
         }
             
         ]
@@ -68,7 +107,7 @@ annotate salessrv.A_SalesOrderItem with @(
         {
             $Type : 'UI.ReferenceFacet',
             ID : 'GeneratedFacet1',
-            Label : 'General Information',
+            Label : 'Sales order Information',
             Target : '@UI.FieldGroup#GeneratedGroup1',
         }
     ]

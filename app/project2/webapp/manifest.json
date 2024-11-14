@@ -1,7 +1,7 @@
 {
   "_version": "1.59.0",
   "sap.app": {
-    "id": "project1",
+    "id": "project2",
     "type": "application",
     "i18n": "i18n/i18n.properties",
     "applicationVersion": {
@@ -13,7 +13,7 @@
     "sourceTemplate": {
       "id": "@sap/generator-fiori:lrop",
       "version": "1.14.2",
-      "toolsId": "ebda7bb0-045b-4062-9ffd-7054a1bf729c"
+      "toolsId": "571a0c2b-d8f5-4456-aed6-b333b8d83603"
     },
     "dataSources": {
       "mainService": {
@@ -61,7 +61,7 @@
       "i18n": {
         "type": "sap.ui.model.resource.ResourceModel",
         "settings": {
-          "bundleName": "project1.i18n.i18n"
+          "bundleName": "project2.i18n.i18n"
         }
       },
       "": {
@@ -86,29 +86,34 @@
       "routes": [
         {
           "pattern": ":?query:",
-          "name": "A_SalesOrderItemList",
-          "target": "A_SalesOrderItemList"
+          "name": "SalesOrderList",
+          "target": "SalesOrderList"
         },
         {
-          "pattern": "A_SalesOrderItem({key}):?query:",
+          "pattern": "SalesOrder({key}):?query:",
+          "name": "SalesOrderObjectPage",
+          "target": "SalesOrderObjectPage"
+        },
+        {
+          "pattern": "SalesOrder({key})/to_Item({key2}):?query:",
           "name": "A_SalesOrderItemObjectPage",
           "target": "A_SalesOrderItemObjectPage"
         }
       ],
       "targets": {
-        "A_SalesOrderItemList": {
+        "SalesOrderList": {
           "type": "Component",
-          "id": "A_SalesOrderItemList",
+          "id": "SalesOrderList",
           "name": "sap.fe.templates.ListReport",
           "options": {
             "settings": {
               "initialLoad":"Enabled",
-              "contextPath": "/A_SalesOrderItem",
+              "contextPath": "/SalesOrder",
               "variantManagement": "Page",
               "navigation": {
-                "A_SalesOrderItem": {
+                "SalesOrder": {
                   "detail": {
-                    "route": "A_SalesOrderItemObjectPage"
+                    "route": "SalesOrderObjectPage"
                   }
                 }
               },
@@ -119,21 +124,30 @@
                   },
                   "actions": {
                     "input": {
-                      "press": "project1.ext.input.input.input",
+                      "press": "project2.ext.input.input.input",
                       "visible": true,
                       "enabled": true,
-                      "requiresSelection": true,
-                      "selectionMode":"Single",
+                      "requiresSelection": false,
                       "text": "input"
-                    },
-                    "stock": {
-                      "press": "project1.ext.stock.stock.stock",
-                      "visible": true,
-                      "enabled": true,
-                      "requiresSelection": true,
-                      "selectionMode":"Single",
-                      "text": "stock"
                     }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "SalesOrderObjectPage": {
+          "type": "Component",
+          "id": "SalesOrderObjectPage",
+          "name": "sap.fe.templates.ObjectPage",
+          "options": {
+            "settings": {
+              "editableHeaderContent": false,
+              "contextPath": "/SalesOrder",
+              "navigation": {
+                "to_Item": {
+                  "detail": {
+                    "route": "A_SalesOrderItemObjectPage"
                   }
                 }
               }
@@ -147,7 +161,7 @@
           "options": {
             "settings": {
               "editableHeaderContent": false,
-              "contextPath": "/A_SalesOrderItem"
+              "contextPath": "/SalesOrder/to_Item"
             }
           }
         }

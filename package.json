@@ -17,7 +17,8 @@
   },
   "scripts": {
     "start": "cds-serve",
-    "watch-project1": "cds watch --open project1/webapp/index.html?sap-ui-xx-viewCache=false"
+    "watch-project1": "cds watch --open project1/webapp/index.html?sap-ui-xx-viewCache=false",
+    "watch-project2": "cds watch --open project2/webapp/index.html?sap-ui-xx-viewCache=false"
   },
   "cds": {
     "requires": {
@@ -28,10 +29,15 @@
       "API_MATERIAL_STOCK_SRV": {
         "kind": "odata-v2",
         "model": "srv/external/API_MATERIAL_STOCK_SRV"
+      },
+      "API_MATERIAL_DOCUMENT_SRV_0001": {
+        "kind": "odata-v2",
+        "model": "srv/external/API_MATERIAL_DOCUMENT_SRV_0001"
       }
     }
   },
   "sapux": [
-    "app/project1"
+    "app/project1",
+    "app/project2"
   ]
 }
