@@ -47,7 +47,9 @@ entity A_SalesOrderItem as projection on external.A_SalesOrderItem{
         key DocumentDate,
         key PostingDate,
         key GoodsMovementCode,
+
         to_MaterialDocumentItem,
+        null as QuantityEntryUnit:String(50),
     }
   };
   

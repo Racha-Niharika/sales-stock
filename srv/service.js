@@ -71,90 +71,124 @@ let payloaddata;
         }
     });
 
-
     this.on('material', async (req) => {
         try {
             console.log("Received data:", req.data);
-payloaddata=req.data;
+            const payloaddata = req.data;
+    
             // Ensure req.data is treated as an array
             const dataArray = Array.isArray(req.data) ? req.data : [req.data];
     
-            // Extract unique 'material' values from dataArray
+            // Extract unique 'material' and 'SDDocument' values
             const matrl = [...new Set(dataArray.map(item => item.material))];
             const SDDocument = [...new Set(dataArray.map(item => item.SDDocument))];
             console.log('Materials:', matrl);
     
-            // Query using the unique material values
-            // const materialDoc = await materialdocapi.run(
-            //     SELECT.from('A_SalesOrderItem')
-            //         .columns(['SalesOrder', 'SalesOrderItem'])
-            //         .where({ Material: {in :matrl},SalesOrder:{in :SDDocument}})
-            // );
+            // Assume extsaleorder is an array and we need the first element for merging
+            const mergedData = { ...payloaddata, ...extsaleorder[0] };
+            console.log('Merged data:', mergedData);
     
-            // console.log("Retrieved material details:", materialDet);
-            // Assuming extsaleorder is an array and we need the first element for merging
-const mergedData = { ...payloaddata, ...extsaleorder[0] };
-const material = mergedData.material;
-console.log('material:',material);
-const externalsaleorder = extsaleorder[0].SalesOrder;
-console.log(externalsaleorder);
-
-
-const materialdocqty = await materialdocapi.run(
-    SELECT.from('A_MaterialDocumentHeader').columns([
-      'DocumentDate',
-      'PostingDate',
-      'GoodsMovementCode',
-      {
-        ref: ['to_MaterialDocumentItem'],
-        expand: ['*']
-      }
-    ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
-  );
-  console.log(materialdocqty);
-  // Ensure materialdocqty is an array for consistent processing
-  const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
-  
-  // Filter the array to only include records with SalesOrder = 969
-  const filteredMaterialDocs = materialDocsArray.filter(element => {
-    if (element.to_MaterialDocumentItem) {
-        const item = element.to_MaterialDocumentItem.find(
-            item => 
-                item.SalesOrder === '969'
-                //item.SpecialStockIdfgSalesOrde === '967' &&
-                //item.SpecialStockIdfgSalesOrderItem === '10'
-        );
-  
-      // If an item with SalesOrder 969 is found, map its properties
-      if (item) {
-        element.SalesOrder = item.SalesOrder;
-        element.SalesOrderItem = item.SalesOrderItem;
-        element.Material = item.Material;
-        element.Plant = item.Plant;
-        element.SpecialStockIdfgSalesOrder = item.SpecialStockIdfgSalesOrder;
-        element.SpecialStockIdfgSalesOrderItem = item.SpecialStockIdfgSalesOrderItem;
-        element.StorageLocation = item.StorageLocation;
-        element.GoodsMovementType = item.GoodsMovementType;
-        element.CostCenter=item.CostCenter;
-        return true; // Include this element in the filtered result
-      }
-    }
-    return false; // Exclude if no matching SalesOrder is found
-  });
-  
-  console.log('Filtered material docs with SalesOrder = 969:', filteredMaterialDocs);
-  
+            const material = mergedData.material;
+            console.log('Material:', material);
+            const requestedQuantity = mergedData.RequestedQuantity; // Extract RequestedQuantity
+            const externalSalesOrder = extsaleorder[0].SalesOrder;
+            console.log('External SalesOrder:', externalSalesOrder);
     
+            const materialdocqty = await materialdocapi.run(
+                SELECT.from('A_MaterialDocumentHeader').columns([
+                    'DocumentDate',
+                    'PostingDate',
+                    'GoodsMovementCode',
+                    {
+                        ref: ['to_MaterialDocumentItem'],
+                        expand: ['*']
+                    }
+                ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
+            );
+    
+            const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
+    
+            // Using a Map for unique matching (keyed by composite of matching fields)
+            const filteredMaterialDocs = new Map();
+    
+            materialDocsArray.forEach(element => {
+                if (element.to_MaterialDocumentItem) {
+                    const item = element.to_MaterialDocumentItem.find(
+                        item => item.SalesOrder === mergedData.SalesOrder
+                    );
+    
+                    // If an item with matching SalesOrder is found, map its properties
+                    if (item) {
+                        const uniqueKey = `${item.SalesOrder}-${item.SalesOrderItem}-${item.Material}-${item.Plant}-${item.SpecialStockIdfgSalesOrder}`;
+    
+                        // Add to the Map if unique
+                        if (!filteredMaterialDocs.has(uniqueKey)) {
+                            filteredMaterialDocs.set(uniqueKey, {
+                                ...element,
+                                SalesOrder: item.SalesOrder,
+                                SalesOrderItem: item.SalesOrderItem,
+                                Material: item.Material,
+                                Plant: item.Plant,
+                                SpecialStockIdfgSalesOrder: item.SpecialStockIdfgSalesOrder,
+                                QuantityInEntryUnit: item.QuantityInEntryUnit,
+                            });
+                        }
+                    }
+                }
+            });
 
-console.log("Merged Data:", JSON.stringify(mergedData, null, 2));
-
-         
+    
+            console.log('Filtered unique material docs:', Array.from(filteredMaterialDocs.values()));
+    
+            // Start a transaction to update the database
+            const tx = cds.transaction(req);
+    
+            // Loop through filteredMaterialDocs and update QuantityInEntryUnit
+            for (const doc of filteredMaterialDocs.values()) {
+                if (
+                    doc.Material === mergedData.material &&
+                    doc.Plant === mergedData.Plant &&
+                    doc.SpecialStockIdfgSalesOrder === mergedData.SDDocument &&
+                    doc.SalesOrder === mergedData.SalesOrder &&
+                    doc.SalesOrderItem === mergedData.SalesOrderItem
+                ) {
+                    console.log(`Updating QuantityInEntryUnit for SalesOrder ${doc.SalesOrder}`);
+    
+                    // Calculate the new QuantityInEntryUnit by subtracting the requested quantity
+                    const newQuantity = doc.QuantityInEntryUnit - requestedQuantity;
+                    console.log(`Decreasing QuantityInEntryUnit by ${requestedQuantity}, New Value: ${newQuantity}`);
+    
+                    // Prepare the data for updating the document's QuantityInEntryUnit
+                    await tx.run(
+                        UPDATE('A_MaterialDocumentHeader')
+                            .set({
+                                QuantityInEntryUnit: newQuantity // Set the decreased quantity
+                            })
+                            .where({
+                                Material: doc.Material,
+                                Plant: doc.Plant,
+                                SpecialStockIdfgSalesOrder: doc.SpecialStockIdfgSalesOrder,
+                                SalesOrder: doc.SalesOrder,
+                                SalesOrderItem: doc.SalesOrderItem
+                            }) // Ensure the update is for the correct matching fields
+                    );
+    
+                    console.log('Updated QuantityInEntryUnit for SalesOrder ${doc.SalesOrder}: ${newQuantity}');
+                }
+                //console.log('doc:',doc);
+            }
+            
+    
+            await tx.commit(); // Commit the transaction
+            
+    
         } catch (error) {
-            console.error("Error during ListReporter operation:", error);
+            console.error("Error during material update operation:", error);
             req.error(500, 'Error during data fetch and upsert operation');
         }
     });
-
+    
+    
     // Register the StatusReporter handler
     
 
@@ -172,7 +206,7 @@ console.log("Merged Data:", JSON.stringify(mergedData, null, 2));
                     .columns(['SalesOrder', 'Material'])
                     .where({ SalesOrder: salesOrderId })
             );
-console.log('soi:',salesOrderItems);
+//console.log('soi:',salesOrderItems);
             if (!salesOrderItems || salesOrderItems.length === 0) {
                 console.log('No items found for SalesOrder');
                 return [];
@@ -210,7 +244,7 @@ console.log('soi:',salesOrderItems);
                 }
             }
 
-            console.log('Filtered Material Details:', filteredMaterialDetails);
+            //console.log('Filtered Material Details:', filteredMaterialDetails);
             return filteredMaterialDetails;
 
         } catch (error) {
