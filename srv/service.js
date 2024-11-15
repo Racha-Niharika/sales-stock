@@ -32,10 +32,13 @@ let payloaddata;
                     if (item) {
                         element.SalesOrderItem = item.SalesOrderItem;
                         element.Material = item.Material;
+                        element.RequestedQuantityUnit=item.RequestedQuantityUnit;
+                        element.RequestedQuantity=item.RequestedQuantity;
+
                     }
                 }
             });
-
+//console.log(res);
             return res;
         } catch (error) {
             console.error('Error reading SalesOrder:', error);
@@ -91,17 +94,56 @@ payloaddata=req.data;
             // console.log("Retrieved material details:", materialDet);
             // Assuming extsaleorder is an array and we need the first element for merging
 const mergedData = { ...payloaddata, ...extsaleorder[0] };
+const material = mergedData.material;
+console.log('material:',material);
 const externalsaleorder = extsaleorder[0].SalesOrder;
 console.log(externalsaleorder);
+
+
 const materialdocqty = await materialdocapi.run(
-    SELECT.from('A_MaterialDocumentHeader').columns([ 'DocumentDate',
-         'PostingDate',
-         'GoodsMovementCode', {
-            ref: ['to_MaterialDocumentItem'],
-            expand:['*'],
-            where: { SalesOrder: externalsaleorder } 
-         }]))
-         console.log(materialdocqty)
+    SELECT.from('A_MaterialDocumentHeader').columns([
+      'DocumentDate',
+      'PostingDate',
+      'GoodsMovementCode',
+      {
+        ref: ['to_MaterialDocumentItem'],
+        expand: ['*']
+      }
+    ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
+  );
+  console.log(materialdocqty);
+  // Ensure materialdocqty is an array for consistent processing
+  const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
+  
+  // Filter the array to only include records with SalesOrder = 969
+  const filteredMaterialDocs = materialDocsArray.filter(element => {
+    if (element.to_MaterialDocumentItem) {
+        const item = element.to_MaterialDocumentItem.find(
+            item => 
+                item.SalesOrder === '969'
+                //item.SpecialStockIdfgSalesOrde === '967' &&
+                //item.SpecialStockIdfgSalesOrderItem === '10'
+        );
+  
+      // If an item with SalesOrder 969 is found, map its properties
+      if (item) {
+        element.SalesOrder = item.SalesOrder;
+        element.SalesOrderItem = item.SalesOrderItem;
+        element.Material = item.Material;
+        element.Plant = item.Plant;
+        element.SpecialStockIdfgSalesOrder = item.SpecialStockIdfgSalesOrder;
+        element.SpecialStockIdfgSalesOrderItem = item.SpecialStockIdfgSalesOrderItem;
+        element.StorageLocation = item.StorageLocation;
+        element.GoodsMovementType = item.GoodsMovementType;
+        element.CostCenter=item.CostCenter;
+        return true; // Include this element in the filtered result
+      }
+    }
+    return false; // Exclude if no matching SalesOrder is found
+  });
+  
+  console.log('Filtered material docs with SalesOrder = 969:', filteredMaterialDocs);
+  
     
 
 console.log("Merged Data:", JSON.stringify(mergedData, null, 2));
@@ -130,7 +172,7 @@ console.log("Merged Data:", JSON.stringify(mergedData, null, 2));
                     .columns(['SalesOrder', 'Material'])
                     .where({ SalesOrder: salesOrderId })
             );
-
+console.log('soi:',salesOrderItems);
             if (!salesOrderItems || salesOrderItems.length === 0) {
                 console.log('No items found for SalesOrder');
                 return [];

@@ -6,11 +6,14 @@ service salessrv{
     action material(material: String,plant: String,quantity: String,SDDocument: String ) returns String;
   entity SalesOrder as projection on external.A_SalesOrder{
         key SalesOrder,
+        
         to_Item,
          SoldToParty,
-        null as PurchaseOrderByCustomer:String(100),
-        key null as SalesOrderItem:String(100),
-        null as Material:String(100)
+
+         key null as RequestedQuantity:String(50),
+        null as PurchaseOrderByCustomer:String(50),
+        key null as SalesOrderItem:String(50),
+        null as Material:String(50)
         
     }
     actions{
@@ -26,6 +29,8 @@ entity A_SalesOrderItem as projection on external.A_SalesOrderItem{
         SalesOrder,
         SalesOrderItem,
         Material,
+        RequestedQuantityUnit,
+        RequestedQuantity
 
     };
 
@@ -70,6 +75,10 @@ annotate salessrv.SalesOrder with @(
         {
             $Type:'UI.DataField',
             Value: SoldToParty
+        },
+        {
+            $Type:'UI.DataField',
+            Value: RequestedQuantity
         }
     ]
 );
@@ -99,6 +108,10 @@ annotate salessrv.SalesOrder with @(
         {
             $Type:'UI.DataField',
             Value: SoldToParty
+        },
+        {
+            $Type:'UI.DataField',
+            Value: RequestedQuantity
         }
             
         ]
