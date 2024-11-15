@@ -1,11 +1,14 @@
 const cds = require('@sap/cds');
-
+const axios = require('axios');
+require('dotenv').config(); // Load environment variables from .env file
 module.exports = cds.service.impl(async function () {
     const { SalesOrder } = this.entities;
     const salesorderapi = await cds.connect.to('API_SALES_ORDER_SRV');
     const materialdocapi = await cds.connect.to('API_MATERIAL_DOCUMENT_SRV_0001');
     const materialapi = await cds.connect.to('API_MATERIAL_STOCK_SRV');
 let extsaleorder;
+
+let mergedData;
 let payloaddata;
     // SalesOrder Read Handler
     this.on('READ', 'SalesOrder', async req => {
@@ -71,122 +74,215 @@ let payloaddata;
         }
     });
 
-    this.on('material', async (req) => {
-        try {
-            console.log("Received data:", req.data);
-            const payloaddata = req.data;
     
-            // Ensure req.data is treated as an array
-            const dataArray = Array.isArray(req.data) ? req.data : [req.data];
-    
-            // Extract unique 'material' and 'SDDocument' values
-            const matrl = [...new Set(dataArray.map(item => item.material))];
-            const SDDocument = [...new Set(dataArray.map(item => item.SDDocument))];
-            console.log('Materials:', matrl);
-    
-            // Assume extsaleorder is an array and we need the first element for merging
-            const mergedData = { ...payloaddata, ...extsaleorder[0] };
-            console.log('Merged data:', mergedData);
-    
-            const material = mergedData.material;
-            console.log('Material:', material);
-            const requestedQuantity = mergedData.RequestedQuantity; // Extract RequestedQuantity
-            const externalSalesOrder = extsaleorder[0].SalesOrder;
-            console.log('External SalesOrder:', externalSalesOrder);
-    
-            const materialdocqty = await materialdocapi.run(
-                SELECT.from('A_MaterialDocumentHeader').columns([
-                    'DocumentDate',
-                    'PostingDate',
-                    'GoodsMovementCode',
-                    {
-                        ref: ['to_MaterialDocumentItem'],
-                        expand: ['*']
-                    }
-                ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
-            );
-    
-            const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
-    
-            // Using a Map for unique matching (keyed by composite of matching fields)
-            const filteredMaterialDocs = new Map();
-    
-            materialDocsArray.forEach(element => {
-                if (element.to_MaterialDocumentItem) {
-                    const item = element.to_MaterialDocumentItem.find(
-                        item => item.SalesOrder === mergedData.SalesOrder
-                    );
-    
-                    // If an item with matching SalesOrder is found, map its properties
-                    if (item) {
-                        const uniqueKey = `${item.SalesOrder}-${item.SalesOrderItem}-${item.Material}-${item.Plant}-${item.SpecialStockIdfgSalesOrder}`;
-    
-                        // Add to the Map if unique
-                        if (!filteredMaterialDocs.has(uniqueKey)) {
-                            filteredMaterialDocs.set(uniqueKey, {
-                                ...element,
-                                SalesOrder: item.SalesOrder,
-                                SalesOrderItem: item.SalesOrderItem,
-                                Material: item.Material,
-                                Plant: item.Plant,
-                                SpecialStockIdfgSalesOrder: item.SpecialStockIdfgSalesOrder,
-                                QuantityInEntryUnit: item.QuantityInEntryUnit,
-                            });
-                        }
-                    }
-                }
-            });
+this.on('material', async (req) => {
+    try {
+        console.log("Received data:", req.data);
+        const payloaddata = req.data;
 
-    
-            console.log('Filtered unique material docs:', Array.from(filteredMaterialDocs.values()));
-    
-            // Start a transaction to update the database
-            const tx = cds.transaction(req);
-    
-            // Loop through filteredMaterialDocs and update QuantityInEntryUnit
-            for (const doc of filteredMaterialDocs.values()) {
-                if (
-                    doc.Material === mergedData.material &&
-                    doc.Plant === mergedData.Plant &&
-                    doc.SpecialStockIdfgSalesOrder === mergedData.SDDocument &&
-                    doc.SalesOrder === mergedData.SalesOrder &&
-                    doc.SalesOrderItem === mergedData.SalesOrderItem
-                ) {
-                    console.log(`Updating QuantityInEntryUnit for SalesOrder ${doc.SalesOrder}`);
-    
-                    // Calculate the new QuantityInEntryUnit by subtracting the requested quantity
-                    const newQuantity = doc.QuantityInEntryUnit - requestedQuantity;
-                    console.log(`Decreasing QuantityInEntryUnit by ${requestedQuantity}, New Value: ${newQuantity}`);
-    
-                    // Prepare the data for updating the document's QuantityInEntryUnit
-                    await tx.run(
-                        UPDATE('A_MaterialDocumentHeader')
-                            .set({
-                                QuantityInEntryUnit: newQuantity // Set the decreased quantity
-                            })
-                            .where({
-                                Material: doc.Material,
-                                Plant: doc.Plant,
-                                SpecialStockIdfgSalesOrder: doc.SpecialStockIdfgSalesOrder,
-                                SalesOrder: doc.SalesOrder,
-                                SalesOrderItem: doc.SalesOrderItem
-                            }) // Ensure the update is for the correct matching fields
-                    );
-    
-                    console.log('Updated QuantityInEntryUnit for SalesOrder ${doc.SalesOrder}: ${newQuantity}');
+        // Ensure req.data is treated as an array
+        const dataArray = Array.isArray(req.data) ? req.data : [req.data];
+
+        // Extract unique 'material' and 'SDDocument' values
+        const matrl = [...new Set(dataArray.map(item => item.material))];
+        const SDDocument = [...new Set(dataArray.map(item => item.SDDocument))];
+        console.log('Materials:', matrl);
+
+        mergedData = { ...payloaddata, ...extsaleorder[0] };
+        console.log('Merged data:', mergedData);
+
+        const material = mergedData.material;
+        requestedQuantity = mergedData.RequestedQuantity; // Extract RequestedQuantity
+        const externalSalesOrder = extsaleorder[0].SalesOrder;
+        console.log('External SalesOrder:', externalSalesOrder);
+
+        // Fetch material documents
+        const materialdocqty = await materialdocapi.run(
+            SELECT.from('A_MaterialDocumentHeader').columns([
+                'DocumentDate',
+                'PostingDate',
+                'GoodsMovementCode',
+                {
+                    ref: ['to_MaterialDocumentItem'],
+                    expand: ['*']
                 }
-                //console.log('doc:',doc);
+            ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
+        );
+
+        const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
+        const filteredMaterialDocs = new Map();
+
+        materialDocsArray.forEach(element => {
+            if (element.to_MaterialDocumentItem) {
+                const item = element.to_MaterialDocumentItem.find(
+                    item => item.SalesOrder === mergedData.SalesOrder
+                );
+
+                if (item) {
+                    const uniqueKey = `${item.SalesOrder}-${item.SalesOrderItem}-${item.Material}-${item.Plant}-${item.SpecialStockIdfgSalesOrder}`;
+
+                    if (!filteredMaterialDocs.has(uniqueKey)) {
+                        filteredMaterialDocs.set(uniqueKey, {
+                            ...element,
+                            SalesOrder: item.SalesOrder,
+                            SalesOrderItem: item.SalesOrderItem,
+                            Material: item.Material,
+                            Plant: item.Plant,
+                            SpecialStockIdfgSalesOrder: item.SpecialStockIdfgSalesOrder,
+                            QuantityInEntryUnit: item.QuantityInEntryUnit,
+                        });
+                    }
+                }
             }
-            
-    
-            await tx.commit(); // Commit the transaction
-            
-    
-        } catch (error) {
-            console.error("Error during material update operation:", error);
-            req.error(500, 'Error during data fetch and upsert operation');
+        });
+
+        console.log('Filtered unique material docs:', Array.from(filteredMaterialDocs.values()));
+
+        // Loop through and post data to API
+       // Loop through and post data to API
+
+       const axios = require('axios'); // Ensure axios is imported
+const axiosInstance = axios.create({
+    baseURL: 'https://my401292-api.s4hana.cloud.sap',
+    auth: {
+        username: 'USER_NNRG',
+        password: 'FMesUvVB}JhYD9nVbDfRoVcdEffwmVNJJScMzuzx',
+    },
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
+
+async function processMaterialDocs(filteredMaterialDocs, material, requestedQuantity) {
+    try {
+        // Fetch CSRF Token
+        console.log('Fetching CSRF Token...');
+        const tokenResponse = await axiosInstance.get(
+            '/sap/opu/odata/sap/API_MATERIAL_DOCUMENT_SRV/',
+            {
+                headers: {
+                    'x-csrf-token': 'Fetch',
+                },
+            }
+        );
+
+        // Store the CSRF token and cookies
+        const csrfToken = tokenResponse.headers['x-csrf-token'];
+        const cookies = tokenResponse.headers['set-cookie'];
+        console.log('Fetched CSRF Token:', csrfToken);
+
+        // Add cookies to the axios instance for session consistency
+        axiosInstance.defaults.headers.common['x-csrf-token'] = csrfToken;
+        axiosInstance.defaults.headers.common['Cookie'] = cookies.join('; ');
+
+        // Loop through and post data to API
+        for (let doc of filteredMaterialDocs.values()) {
+            const {
+                Material,
+                Plant,
+                SpecialStockIdfgSalesOrder,
+                SalesOrder,
+                SalesOrderItem,
+            } = doc;
+
+            if (material === Material) {
+                /*
+                const postData = {
+                    SalesOrder: SalesOrder,
+                    SalesOrderItem: SalesOrderItem,
+                    Material: Material,
+                    Plant: Plant,
+                    SpecialStockIdfgSalesOrder: SpecialStockIdfgSalesOrder,
+                    QuantityInEntryUnit: requestedQuantity,
+                };
+                */
+                const postData = { 
+                    "DocumentDate": "2024-11-14T00:00:00", 
+                    "PostingDate": "2024-11-14T00:00:00", 
+                    "GoodsMovementCode": "04", 
+                    "to_MaterialDocumentItem":
+                    [ { 
+                    "GoodsMovementType": "413", 
+                    "Material": mergedData.material, 
+                    "Plant": mergedData.plant,
+                    "StorageLocation": "FG01", 
+                    "QuantityInEntryUnit":"1", 
+                    "EntryUnit": "PC",
+                    "Batch": "",
+                    "InventorySpecialStockType": "E", 
+                    "IssgOrRcvgMaterial": "ASLP", 
+                    "IssuingOrReceivingPlant": "1001", 
+                    "IssuingOrReceivingStorageLoc": "FG01",
+                    "IssgOrRcvgBatch": "",
+                    "IssuingOrReceivingValType": "", 
+                    "SalesOrder": mergedData.SalesOrder,
+                    "SalesOrderItem": mergedData.SalesOrderItem, 
+                    "SpecialStockIdfgSalesOrder": mergedData.SDDocument,
+                    "SpecialStockIdfgSalesOrderItem": "10",
+                    "CostCenter":"10000"
+                    } ] 
+                    }
+
+                console.log('Post Data:', postData);
+
+                try {
+                    console.log('Making POST request...');
+                    const response = await axiosInstance.post(
+                        '/sap/opu/odata/sap/API_MATERIAL_DOCUMENT_SRV/A_MaterialDocumentHeader',
+                        postData
+                    );
+
+                    console.log('API Response:', response.data);
+                } catch (error) {
+                    // Log detailed error information
+                    if (error.response) {
+                        console.error('Error Response Data:', error.response.data);
+                        console.error('Error Response Status:', error.response.status);
+                        console.error('Error Response Headers:', error.response.headers);
+                    } else {
+                        console.error('Error Message:', error.message);
+                    }
+                }
+            }
         }
-    });
+    } catch (error) {
+        console.error('Error Fetching CSRF Token:', error.message);
+        if (error.response) {
+            console.error('Error Response Data:', error.response.data);
+            console.error('Error Response Status:', error.response.status);
+            console.error('Error Response Headers:', error.response.headers);
+        }
+    }
+}
+
+// Example usage
+(async () => {
+    // Mock data for testing
+    const filteredMaterialDocs = new Map([
+        [
+            1,
+            {
+                Material: 'MAT001',
+                Plant: 'PLANT001',
+                SpecialStockIdfgSalesOrder: 'STOCK001',
+                SalesOrder: 'SO001',
+                SalesOrderItem: '10',
+            },
+        ],
+    ]);
+
+    const material = 'MAT001';
+    const requestedQuantity = 50;
+
+    await processMaterialDocs(filteredMaterialDocs, material, requestedQuantity);
+})();
+
+
+    } catch (error) {
+        console.error("Error during material update operation:", error);
+        req.error(500, 'Error during data fetch and upsert operation');
+    }
+});
     
     
     // Register the StatusReporter handler
