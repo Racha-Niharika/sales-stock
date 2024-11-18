@@ -92,38 +92,30 @@ sap.ui.define([
                             }),
                             new Button({
                                 text: 'Show Material Number',
-                                enabled: false,  // Initially disable button, can be enabled based on selection
+                                enabled: false,  
                                 press: function () {
                                     var oSelectedItem = oTable.getSelectedItem();
                                     if (oSelectedItem) {
-                                        // Retrieve all the cells from the selected row
-                                        var oCells = oSelectedItem.getCells();
                                         
-                                        // Create an object to hold the data from the selected row
+                                        var oCells = oSelectedItem.getCells();
+
                                         var rowData = {};
-                                
-                                        // Assuming the cells contain the data in a specific order, map each cell value to the respective property
-                                        rowData.material = oCells[0].getText();  // Assuming the first cell holds the material number
-                                        rowData.plant = oCells[1].getText();    // Assuming the second cell holds the material name
-                                        rowData.quantity = oCells[4].getText();         // Assuming the third cell holds the quantity
-                                        rowData.SDDocument = oCells[6].getText();            // Assuming the fourth cell holds the price
-                                        // Add more properties based on the table's structure
-                                
-                                        // Show the selected material number for confirmation
-                                        MessageToast.show("Selected Material Number: " + rowData.materialNumber);
-                                
-                                        // Make an AJAX POST request to send the selected row data
+                                        rowData.material = oCells[0].getText();  
+                                        rowData.plant = oCells[1].getText();    
+                                        rowData.quantity = oCells[4].getText();        
+                                        rowData.SDDocument = oCells[6].getText();           
+                                       
                                         $.ajax({
-                                            url: '/odata/v4/salessrv/material', // Replace with your API endpoint
+                                            url: '/odata/v4/salessrv/material', 
                                             type: 'POST',
                                             contentType: 'application/json',
-                                            data: JSON.stringify(rowData), // Send all selected row data as JSON
+                                            data: JSON.stringify(rowData), 
                                             success: function (response) {
-                                                // Handle success response
+                                                
                                                 MessageToast.show("Data successfully sent to server.");
                                             },
                                             error: function (error) {
-                                                // Handle error response
+                                              
                                                 MessageToast.show("Error sending data to server.");
                                             }
                                         });

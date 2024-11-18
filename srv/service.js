@@ -1,34 +1,19 @@
 const cds = require('@sap/cds');
 const axios = require('axios');
-require('dotenv').config(); // Load environment variables from .env file
-module.exports = cds.service.impl(async function () {
-    const { SalesOrder } = this.entities;
+require('dotenv').config(); 
+module.exports = cds.service.impl(async function () {   
     const salesorderapi = await cds.connect.to('API_SALES_ORDER_SRV');
     const materialdocapi = await cds.connect.to('API_MATERIAL_DOCUMENT_SRV_0001');
     const materialapi = await cds.connect.to('API_MATERIAL_STOCK_SRV');
 let extsaleorder;
-
 let mergedData;
-let payloaddata;
-    // SalesOrder Read Handler
     this.on('READ', 'SalesOrder', async req => {
-        req.query.SELECT.columns = [
-            { ref: ['SalesOrder'] },
-            { ref: ['PurchaseOrderByCustomer'] },
-            {ref:['SoldToParty']},
-            { ref: ['to_Item'], expand: ['*'] }
-        ];
-
-        try {
-            // Fetching sales orders
+        req.query.SELECT.columns = [{ ref: ['SalesOrder'] },{ ref: ['PurchaseOrderByCustomer'] },{ref:['SoldToParty']},{ ref: ['to_Item'], expand: ['*'] }];
+        try {           
             let res = await salesorderapi.run(req.query);
-
-            // Check if res is an array, if not, wrap it in an array
             if (!Array.isArray(res)) {
                 res = [res];
             }
-
-            // Process each sales order item
             res.forEach(element => {
                 if (element.to_Item) {
                     const item = element.to_Item.find(item => item.SalesOrder === element.SalesOrder);
@@ -48,55 +33,33 @@ let payloaddata;
             return req.error(500, 'Failed to fetch data from SalesOrder service');
         }
     });
-
-    // Material Detail Read Handler
-    this.on('READ', 'MaterialDetail', async req => {
-        req.query.SELECT.columns = [
-            { ref: ['Material'] },
-            { ref: ['Plant'] },
-            { ref: ['StorageLocation'] },
-            { ref: ['Batch'] },
-            { ref: ['MatlWrhsStkQtyInMatlBaseUnit'] }
-        ];
-
+this.on('READ', 'MaterialDetail', async req => {
+        req.query.SELECT.columns = [{ ref: ['Material'] },{ ref: ['Plant'] },{ ref: ['StorageLocation'] },{ ref: ['Batch'] },{ ref: ['MatlWrhsStkQtyInMatlBaseUnit'] }  ];
         try {
             let res = await materialapi.run(req.query);
-
-            // Check if res is an array, if not, wrap it in an array
             if (!Array.isArray(res)) {
                 res = [res];
             }
-
             return res;
         } catch (error) {
             console.error('Error reading MaterialDetail:', error);
             return req.error(500, 'Failed to fetch data from MaterialDetail service');
         }
-    });
-
-    
+    });   
 this.on('material', async (req) => {
     try {
         console.log("Received data:", req.data);
         const payloaddata = req.data;
-
-        // Ensure req.data is treated as an array
         const dataArray = Array.isArray(req.data) ? req.data : [req.data];
-
-        // Extract unique 'material' and 'SDDocument' values
         const matrl = [...new Set(dataArray.map(item => item.material))];
-        const SDDocument = [...new Set(dataArray.map(item => item.SDDocument))];
+        //const SDDocument = [...new Set(dataArray.map(item => item.SDDocument))];
         console.log('Materials:', matrl);
-
         mergedData = { ...payloaddata, ...extsaleorder[0] };
         console.log('Merged data:', mergedData);
-
         const material = mergedData.material;
-        requestedQuantity = mergedData.RequestedQuantity; // Extract RequestedQuantity
+        requestedQuantity = mergedData.RequestedQuantity; 
         const externalSalesOrder = extsaleorder[0].SalesOrder;
         console.log('External SalesOrder:', externalSalesOrder);
-
-        // Fetch material documents
         const materialdocqty = await materialdocapi.run(
             SELECT.from('A_MaterialDocumentHeader').columns([
                 'DocumentDate',
@@ -108,19 +71,13 @@ this.on('material', async (req) => {
                 }
             ]).where({ DocumentDate: '2024-11-14', PostingDate: '2024-11-14' })
         );
-
         const materialDocsArray = Array.isArray(materialdocqty) ? materialdocqty : [materialdocqty];
         const filteredMaterialDocs = new Map();
-
         materialDocsArray.forEach(element => {
             if (element.to_MaterialDocumentItem) {
-                const item = element.to_MaterialDocumentItem.find(
-                    item => item.SalesOrder === mergedData.SalesOrder
-                );
-
+                const item = element.to_MaterialDocumentItem.find(item => item.SalesOrder === mergedData.SalesOrder);
                 if (item) {
                     const uniqueKey = `${item.SalesOrder}-${item.SalesOrderItem}-${item.Material}-${item.Plant}-${item.SpecialStockIdfgSalesOrder}`;
-
                     if (!filteredMaterialDocs.has(uniqueKey)) {
                         filteredMaterialDocs.set(uniqueKey, {
                             ...element,
@@ -135,13 +92,8 @@ this.on('material', async (req) => {
                 }
             }
         });
-
-        console.log('Filtered unique material docs:', Array.from(filteredMaterialDocs.values()));
-
-        // Loop through and post data to API
-       // Loop through and post data to API
-
-       const axios = require('axios'); // Ensure axios is imported
+console.log('Filtered unique material docs:', Array.from(filteredMaterialDocs.values()));
+//const axios = require('axios');
 const axiosInstance = axios.create({
     baseURL: 'https://my401292-api.s4hana.cloud.sap',
     auth: {
@@ -152,10 +104,8 @@ const axiosInstance = axios.create({
         'Content-Type': 'application/json',
     },
 });
-
-async function processMaterialDocs(filteredMaterialDocs, material, requestedQuantity) {
+async function processMaterialDocs(filteredMaterialDocs, material) {
     try {
-        // Fetch CSRF Token
         console.log('Fetching CSRF Token...');
         const tokenResponse = await axiosInstance.get(
             '/sap/opu/odata/sap/API_MATERIAL_DOCUMENT_SRV/',
@@ -165,37 +115,15 @@ async function processMaterialDocs(filteredMaterialDocs, material, requestedQuan
                 },
             }
         );
-
-        // Store the CSRF token and cookies
         const csrfToken = tokenResponse.headers['x-csrf-token'];
         const cookies = tokenResponse.headers['set-cookie'];
         console.log('Fetched CSRF Token:', csrfToken);
-
-        // Add cookies to the axios instance for session consistency
         axiosInstance.defaults.headers.common['x-csrf-token'] = csrfToken;
         axiosInstance.defaults.headers.common['Cookie'] = cookies.join('; ');
-
-        // Loop through and post data to API
+    console.log('filteredMaterialDocs',filteredMaterialDocs.values());
         for (let doc of filteredMaterialDocs.values()) {
-            const {
-                Material,
-                Plant,
-                SpecialStockIdfgSalesOrder,
-                SalesOrder,
-                SalesOrderItem,
-            } = doc;
-
+            const {Material} = doc;
             if (material === Material) {
-                /*
-                const postData = {
-                    SalesOrder: SalesOrder,
-                    SalesOrderItem: SalesOrderItem,
-                    Material: Material,
-                    Plant: Plant,
-                    SpecialStockIdfgSalesOrder: SpecialStockIdfgSalesOrder,
-                    QuantityInEntryUnit: requestedQuantity,
-                };
-                */
                 const postData = { 
                     "DocumentDate": "2024-11-14T00:00:00", 
                     "PostingDate": "2024-11-14T00:00:00", 
@@ -222,9 +150,7 @@ async function processMaterialDocs(filteredMaterialDocs, material, requestedQuan
                     "CostCenter":"10000"
                     } ] 
                     }
-
                 console.log('Post Data:', postData);
-
                 try {
                     console.log('Making POST request...');
                     const response = await axiosInstance.post(
@@ -233,12 +159,9 @@ async function processMaterialDocs(filteredMaterialDocs, material, requestedQuan
                     );
 
                     console.log('API Response:', response.data);
-                } catch (error) {
-                    // Log detailed error information
+                } catch (error) {                   
                     if (error.response) {
                         console.error('Error Response Data:', error.response.data);
-                        console.error('Error Response Status:', error.response.status);
-                        console.error('Error Response Headers:', error.response.headers);
                     } else {
                         console.error('Error Message:', error.message);
                     }
@@ -249,105 +172,54 @@ async function processMaterialDocs(filteredMaterialDocs, material, requestedQuan
         console.error('Error Fetching CSRF Token:', error.message);
         if (error.response) {
             console.error('Error Response Data:', error.response.data);
-            console.error('Error Response Status:', error.response.status);
-            console.error('Error Response Headers:', error.response.headers);
         }
     }
 }
-
-// Example usage
 (async () => {
-    // Mock data for testing
-    const filteredMaterialDocs = new Map([
-        [
-            1,
-            {
-                Material: 'MAT001',
-                Plant: 'PLANT001',
-                SpecialStockIdfgSalesOrder: 'STOCK001',
-                SalesOrder: 'SO001',
-                SalesOrderItem: '10',
-            },
-        ],
-    ]);
-
-    const material = 'MAT001';
-    const requestedQuantity = 50;
-
     await processMaterialDocs(filteredMaterialDocs, material, requestedQuantity);
 })();
-
-
     } catch (error) {
         console.error("Error during material update operation:", error);
         req.error(500, 'Error during data fetch and upsert operation');
     }
 });
-    
-    
-    // Register the StatusReporter handler
-    
 
-    // Custom label handler for SalesOrder
-
-    this.on('label', 'SalesOrder', async req => {
+this.on('label', 'SalesOrder', async req => {
         try {
             const salesOrderId = req.params[0].SalesOrder;
             console.log('params:', req.params);
-            extsaleorder=req.params;
-            //console.log('filtered:',filteredMaterialDetails);
-            // Fetch SalesOrder items to get unique materials
+            extsaleorder=req.params;      
             const salesOrderItems = await salesorderapi.run(
-                SELECT.from('A_SalesOrderItem')
-                    .columns(['SalesOrder', 'Material'])
-                    .where({ SalesOrder: salesOrderId })
+                SELECT.from('A_SalesOrderItem').columns(['SalesOrder', 'Material']).where({ SalesOrder: salesOrderId })
             );
-//console.log('soi:',salesOrderItems);
             if (!salesOrderItems || salesOrderItems.length === 0) {
                 console.log('No items found for SalesOrder');
                 return [];
             }
-
-            // Extract unique materials
             const materials = [...new Set(salesOrderItems.map(item => item.Material))];
             console.log('Materials:', materials);
-
-            // Fetch material details only if materials list is non-empty
             let materialDetails = [];
             if (materials.length > 0) {
                 materialDetails = await materialapi.run(
-                    SELECT.from('A_MatlStkInAcctMod')
-                        .columns(['Material', 'Plant', 'Batch', 'StorageLocation', 'MatlWrhsStkQtyInMatlBaseUnit', 'SDDocument', 'SDDocumentItem', 'MaterialBaseUnit'])
+                    SELECT.from('A_MatlStkInAcctMod').columns(['Material', 'Plant', 'Batch', 'StorageLocation', 'MatlWrhsStkQtyInMatlBaseUnit', 'SDDocument', 'SDDocumentItem', 'MaterialBaseUnit'])
                         .where({ Material: { in: materials } })
                 );
             }
-
-            // Filter materialDetails based on SoldToParty for corresponding SDDocument
             const filteredMaterialDetails = [];
             for (const detail of materialDetails) {
                 const saleOrder = detail.SDDocument;
-
-                // Fetch SoldToParty for each SDDocument (Sales Order)
                 const orderDetails = await salesorderapi.run(
-                    SELECT.from('A_SalesOrder')
-                        .columns(['SoldToParty'])
-                        .where({ SalesOrder: saleOrder })
+                    SELECT.from('A_SalesOrder').columns(['SoldToParty']).where({ SalesOrder: saleOrder })
                 );
-
-                // Include detail if SoldToParty is 1000003 and quantity is non-zero
                 if (orderDetails.length > 0 && orderDetails[0].SoldToParty === '1000003' && detail.MatlWrhsStkQtyInMatlBaseUnit > 0) {
                     filteredMaterialDetails.push(detail);
                 }
             }
-
-            //console.log('Filtered Material Details:', filteredMaterialDetails);
             return filteredMaterialDetails;
-
         } catch (error) {
             console.error('Error in SalesOrder label handler:', error);
             return req.error(500, 'Failed to fetch data for SalesOrder label');
         }
-    });
-    
+    });   
 });
 
